@@ -3,12 +3,9 @@ package bank.dev.service;
 import bank.dev.entity.Account;
 import bank.dev.entity.User;
 import bank.dev.util.Message;
-import bank.dev.util.Util;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,51 +20,26 @@ public class UserService {
 
     private final Map<Long, String> logins = new HashMap<>();
 
+    private long userId = 1;
+
     public UserService(@Lazy AccountService accountService) {
         this.accountService = accountService;
     }
 
-    public User createUser() {
-        try {
-            System.out.println("Создание Юзера...");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
-            String command;
-            System.out.println(Message.ENTER_LOGIN_USER_ID.getMessage());
-            while ((command = reader.readLine()) != null) {
-                String login = command.trim();
-                if (command.equalsIgnoreCase("exit")) {
-                    System.out.println("Завершение создания Юзера");
-                    break;
-                }
-                if(users.containsKey(login)) {
-                    System.out.printf(Message.USER_LOGIN_EXISTS.getMessage(), login);
-                    continue;
-                }
-                User user = createUser(login);
-                System.out.printf(Message.USER_CREATED.getMessage(), login);
-                return user;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
-    }
-
     public User createUser(String login) {
         if(users.containsKey(login)) {
-            throw new RuntimeException("Пользователь с данным логином существует");
+            throw new RuntimeException(String.format(Message.USER_LOGIN_EXISTS.getMessage(), login));
         }
         User user = new User();
         user.setLogin(login);
-        user.setId(Util.generateId());
-        user.setAccounts(List.of(accountService.createAccount(user.getId())));
+        user.setId(userId++);
+        user.setAccounts(List.of(accountService.createAccount(user.getId(), true)));
         users.put(login, user);
         logins.put(user.getId(), login);
         return user;
     }
 
     public List<User> showUsers() {
-        System.out.println("List of all users: " + users.values());
         return new ArrayList<>(users.values());
     }
 

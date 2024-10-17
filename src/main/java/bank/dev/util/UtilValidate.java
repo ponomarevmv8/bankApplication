@@ -1,8 +1,6 @@
 package bank.dev.util;
 
-public class Util {
-
-    private static Long countId = 0L;
+public class UtilValidate {
 
     public static boolean isNumeric(String str) {
         boolean result = str.matches("-?\\d+(\\.\\d+)?");
@@ -20,16 +18,11 @@ public class Util {
         return result;
     }
 
-    public static boolean isNumberPositive(Long number) {
-        boolean result = number.doubleValue() > 0;
+    public static boolean isNumberAndPositive(String str) {
+        boolean result = isNumeric(str);
         if(!result){
-            System.out.println("ОШИБКА: Число должно быть положительным");
+            return false;
         }
-        return result;
+        return isNumberPositive(Double.parseDouble(str));
     }
-
-    public static Long generateId() {
-        return ++countId;
-    }
-
 }

@@ -6,12 +6,12 @@ public enum Message {
     START("Please enter one of operation type:\n" +
             "-ACCOUNT_CREATE\n" +
             "-SHOW_ALL_USERS\n" +
-            "-ACCOUNT_CLOSE\n" +
+            "-ACCOUNT_CLOSED\n" +
             "-ACCOUNT_WITHDRAW\n" +
             "-ACCOUNT_DEPOSIT\n" +
             "-ACCOUNT_TRANSFER\n" +
             "-USER_CREATE\n"),
-    COMMAND_NOT_FOUND("Command not found"),
+    COMMAND_NOT_FOUND("Command not found\n"),
     SOURCE_ACCOUNT("Enter source account ID:\n"),
     TARGET_ACCOUNT("Enter target account ID:\n"),
     TRANSFER("Amount %s transferred from account ID %s to account ID %s.\n"),

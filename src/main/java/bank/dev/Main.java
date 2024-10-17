@@ -9,6 +9,6 @@ public class Main {
     public static void main(String[] args) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext("bank.dev");
         OperationsConsoleListener consoleListener = context.getBean(OperationsConsoleListener.class);
-        consoleListener.startBank();
+        consoleListener.listenConsole();
     }
 }
