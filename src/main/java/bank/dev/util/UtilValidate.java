@@ -19,10 +19,6 @@ public class UtilValidate {
     }
 
     public static boolean isNumberAndPositive(String str) {
-        boolean result = isNumeric(str);
-        if(!result){
-            return false;
-        }
-        return isNumberPositive(Double.parseDouble(str));
+        return isNumeric(str) && isNumberPositive(Double.parseDouble(str));
     }
 }

@@ -1,16 +1,16 @@
 package bank.dev.processors.impl;
 
-import bank.dev.processors.OperationProcess;
+import bank.dev.processors.OperationProcessor;
 import bank.dev.processors.OperationType;
 import bank.dev.service.UserService;
 import org.springframework.stereotype.Component;
 
 @Component
-public class ShowAllUsersProcess implements OperationProcess {
+public class ShowAllUsersProcessor implements OperationProcessor {
 
     private final UserService userService;
 
-    public ShowAllUsersProcess(UserService userService) {
+    public ShowAllUsersProcessor(UserService userService) {
         this.userService = userService;
     }
 

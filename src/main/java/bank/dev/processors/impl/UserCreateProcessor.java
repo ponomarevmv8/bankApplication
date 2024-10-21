@@ -1,7 +1,7 @@
 package bank.dev.processors.impl;
 
 import bank.dev.entity.User;
-import bank.dev.processors.OperationProcess;
+import bank.dev.processors.OperationProcessor;
 import bank.dev.processors.OperationType;
 import bank.dev.service.UserService;
 import bank.dev.util.Message;
@@ -10,12 +10,12 @@ import org.springframework.stereotype.Component;
 import java.util.Scanner;
 
 @Component
-public class UserCreateProcess implements OperationProcess {
+public class UserCreateProcessor implements OperationProcessor {
 
     private final UserService userService;
     private final Scanner scanner;
 
-    public UserCreateProcess(UserService userService, Scanner scanner) {
+    public UserCreateProcessor(UserService userService, Scanner scanner) {
         this.userService = userService;
         this.scanner = scanner;
     }
@@ -23,6 +23,7 @@ public class UserCreateProcess implements OperationProcess {
 
     @Override
     public void process() {
+        System.out.println(Message.EXIT.getMessage());
         System.out.println(Message.ENTER_LOGIN_USER_ID.getMessage());
         var loginUser = scanner.nextLine();
         if(loginUser.equalsIgnoreCase("exit") || loginUser.isEmpty()) {

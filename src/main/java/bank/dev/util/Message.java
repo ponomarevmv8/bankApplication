@@ -27,6 +27,7 @@ public enum Message {
     AMOUNT("Enter amount\n"),
     CREATE_ACCOUNT("New account created with ID: %s for user: %s\n"),
     CLOSE_ACCOUNT("Account with ID %s has been closed.\n"),
+    EXIT("Enter \"exit\" to stop operations\n"),
     NOT_CLOSED_ACCOUNT("Account with ID %s has not been closed.\n");
 
 

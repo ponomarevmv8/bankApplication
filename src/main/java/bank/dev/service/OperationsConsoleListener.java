@@ -1,6 +1,6 @@
 package bank.dev.service;
 
-import bank.dev.processors.OperationProcess;
+import bank.dev.processors.OperationProcessor;
 import bank.dev.processors.OperationType;
 import bank.dev.util.Message;
 import org.springframework.stereotype.Component;
@@ -11,16 +11,16 @@ import java.util.stream.Collectors;
 @Component
 public class OperationsConsoleListener {
 
-    private final Map<OperationType, OperationProcess> operationProcesses;
+    private final Map<OperationType, OperationProcessor> operationProcesses;
     private final Scanner scanner;
 
 
-    public OperationsConsoleListener(Scanner scanner, List<OperationProcess> operationProcesses) {
+    public OperationsConsoleListener(Scanner scanner, List<OperationProcessor> operationProcesses) {
         this.scanner = scanner;
         this.operationProcesses = operationProcesses.stream()
                 .collect(
                         Collectors.toMap(
-                                OperationProcess::getOperationType,
+                                OperationProcessor::getOperationType,
                                 operationProcess -> operationProcess
                         )
                 );

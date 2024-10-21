@@ -10,7 +10,7 @@ public class User {
 
     private String login;
 
-    List<Account> accounts = new ArrayList<Account>();
+    private List<Account> accounts = new ArrayList<>();
 
     public Long getId() {
         return id;

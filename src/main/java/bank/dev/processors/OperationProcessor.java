@@ -1,6 +1,6 @@
 package bank.dev.processors;
 
-public interface OperationProcess {
+public interface OperationProcessor {
 
     void process();
 

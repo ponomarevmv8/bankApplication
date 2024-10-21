@@ -6,10 +6,7 @@ import bank.dev.util.Message;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Component
 public class UserService {
@@ -22,7 +19,7 @@ public class UserService {
 
     private long userId = 1;
 
-    public UserService(@Lazy AccountService accountService) {
+    public UserService(AccountService accountService) {
         this.accountService = accountService;
     }
 
@@ -47,25 +44,15 @@ public class UserService {
         return logins.containsKey(userId);
     }
 
-    public User getUser(String login) {
-        if(!logins.containsKey(login)) {
-            return null;
-        }
-        return users.get(login);
-    }
-
-    public User getUser(Long userId) {
-        if(!logins.containsKey(userId)) {
-            return null;
-        }
-        return users.get(logins.get(userId));
+    public Optional<User> getUser(Long userId) {
+        return Optional.ofNullable(users.get(logins.get(userId)));
     }
 
     public void modifyAccount(Long userId, List<Account> accounts) {
         if(!logins.containsKey(userId)) {
             return;
         }
-        User user = getUser(userId);
+        User user = getUser(userId).get();
         user.setAccounts(accounts);
     }
 }
