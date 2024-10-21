@@ -22,7 +22,7 @@ public class AccountService {
     private final AccountProperties accountProperties;
 
 
-    public AccountService(UserService userService, AccountProperties accountProperties) {
+    public AccountService(@Lazy UserService userService, AccountProperties accountProperties) {
         this.userService = userService;
         this.accountProperties = accountProperties;
     }
