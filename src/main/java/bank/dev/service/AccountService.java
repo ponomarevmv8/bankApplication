@@ -2,119 +2,195 @@ package bank.dev.service;
 
 import bank.dev.config.AccountProperties;
 import bank.dev.entity.Account;
+import bank.dev.entity.User;
 import bank.dev.util.Message;
+import bank.dev.util.TransactionHelper;
+import org.hibernate.HibernateException;
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.hibernate.engine.spi.EntityKey;
+import org.hibernate.engine.spi.PersistenceContext;
+import org.hibernate.engine.spi.SessionImplementor;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Component
 public class AccountService {
 
-    private final Map<Long, List<Account>> accountsUserId = new HashMap<>();
-    private final Map<Long, Account> accounts = new HashMap<>();
-    private long accountId = 1;
-
     private final UserService userService;
     private final AccountProperties accountProperties;
+    private final TransactionHelper transactionHelper;
+    private final SessionFactory sessionFactory;
 
 
-    public AccountService(@Lazy UserService userService, AccountProperties accountProperties) {
+    public AccountService(@Lazy UserService userService, AccountProperties accountProperties, TransactionHelper transactionHelper, SessionFactory sessionFactory) {
         this.userService = userService;
         this.accountProperties = accountProperties;
+        this.transactionHelper = transactionHelper;
+        this.sessionFactory = sessionFactory;
+    }
+
+    public Account createAccount(User user) {
+        return transactionHelper.executeInTransaction(session -> {
+            Account account = new Account();
+            account.setUser(user);
+            if (user.getAccounts().isEmpty()) {
+                account.setMoneyAmount(accountProperties.getDefaultBalance());
+            }
+            session.persist(account);
+            return account;
+        });
     }
 
     public Account createAccount(Long userId) {
-        return createAccount(userId, false);
-    }
-
-    public Account createAccount(Long userId, boolean isService) {
-        if (!userService.checkLogin(userId) && !isService) {
+        Optional<User> user = userService.getById(userId);
+        if (!user.isPresent()) {
             throw new IllegalStateException(String.format(Message.NOT_FOUND_USER.getMessage(),
                     userId));
         }
-        Account account = new Account();
-        account.setUserId(userId);
-        account.setId(accountId++);
-        if (!accountsUserId.containsKey(userId)) {
-            account.setMoneyAmount(accountProperties.getDefaultBalance());
-            accountsUserId.put(userId, new ArrayList<>(List.of(account)));
-        } else {
-            List<Account> accountList = accountsUserId.get(userId);
-            accountList.add(account);
-            userService.modifyAccount(userId, accountList);
-        }
-        accounts.put(account.getId(), account);
-        return account;
+        return createAccount(user.get());
     }
 
-    public Account closeAccount(Long accountId) throws RuntimeException {
-        if (!accounts.containsKey(accountId)) {
-            throw new RuntimeException(String.format(Message.NOT_FOUND_ACCOUNT.getMessage(), accountId));
-        }
-        List<Account> accountsUser = accountsUserId.get(accounts.get(accountId).getUserId());
-        if (accountsUser.size() < 2) {
-            throw new RuntimeException("Аккаунт невозможно закрыть, так как он единственный");
-        }
+    public void closeAccount(Long accountId) throws RuntimeException {
 
-        Account accountClosed = accounts.get(accountId);
-        Account accountTransfer = accountsUser.get(0).getId().equals(accountId) ? accountsUser.get(1) : accountsUser.get(0);
-        accountTransfer.setMoneyAmount(accountTransfer.getMoneyAmount() + accountClosed.getMoneyAmount());
-        accountsUser.remove(accountClosed);
-        return accountClosed;
+        transactionHelper.executeInTransaction(session -> {
+            Optional<Account> accountOptional = getById(accountId);
+            if (!accountOptional.isPresent()) {
+                throw new RuntimeException(String.format(Message.NOT_FOUND_ACCOUNT.getMessage(), accountId));
+            }
+            Account account = accountOptional.get();
+            List<Account> accountsUser = account.getUser().getAccounts();
+            if (accountsUser.size() < 2) {
+                throw new RuntimeException("Аккаунт невозможно закрыть, так как он единственный");
+            }
+            if (account.getMoneyAmount() != 0L) {
+                Account accountTransfer = accountsUser.get(0).getId().equals(accountId) ?
+                        accountsUser.get(1)
+                        : accountsUser.get(0);
+                accountTransfer.setMoneyAmount(accountTransfer.getMoneyAmount() + account.getMoneyAmount());
+            }
+            session.remove(account);
+        });
+    }
+
+    private void printPersistent(Session session) {
+        SessionImplementor sessionImpl = (SessionImplementor) session;
+        PersistenceContext persistenceContext = sessionImpl.getPersistenceContext();
+        var entity = persistenceContext.reentrantSafeEntityEntries();
+        System.out.println(" --- смотрим всех persistent объекты ---");
+        System.out.println(" --- кол-во " + entity.length + " ---");
+        for (int i = 0; i < entity.length; i++) {
+            var key = entity[i].getKey();
+            System.out.println(" --- Entity persistent: " + key);
+        }
+    }
+
+    public Optional<Account> getById(Long accountId) {
+        Session session = null;
+        try {
+            session = sessionFactory.getCurrentSession();
+        } catch (HibernateException e) {
+            System.out.println("Not found opened session");
+        }
+        if (session == null) {
+            try (Session sessionNew = sessionFactory.openSession()) {
+                return sessionNew.createQuery("""
+                                select a from Account a left join fetch a.user u where a.id = :accountId
+                                """, Account.class)
+                        .setParameter("accountId", accountId)
+                        .uniqueResultOptional();
+            }
+        } else {
+            if (session.getTransaction().isActive()) {
+                SessionImplementor sessionImpl = (SessionImplementor) session;
+                PersistenceContext persistenceContext = sessionImpl.getPersistenceContext();
+                var account = persistenceContext.getEntity(new EntityKey(accountId, sessionImpl.getEntityPersister(Account.class.getName(), null)));
+                if (account != null) {
+                    return Optional.of((Account) account);
+                }
+                return session.createQuery("""
+                                select a from Account a left join fetch a.user u where a.id = :accountId
+                                """, Account.class)
+                        .setParameter("accountId", accountId)
+                        .uniqueResultOptional();
+            }
+            try (Session sessionNew = sessionFactory.openSession()) {
+                return sessionNew.createQuery("""
+                                select a from Account a left join fetch a.user u where a.id = :accountId
+                                """, Account.class)
+                        .setParameter("accountId", accountId)
+                        .uniqueResultOptional();
+            }
+        }
     }
 
     public Account accountTransfer(Long sourceAccountId, Long targetAccountId, Double amount) throws RuntimeException {
-        Account sourceAccount = accounts.get(sourceAccountId);
-        Account targetAccount = accounts.get(targetAccountId);
-        if (sourceAccount == null) {
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(sourceAccountId));
-        }
-        if(targetAccount == null){
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(targetAccountId));
-        }
-        if (amount < 0) {
+        Double amountTransfer = amount;
+        if (amountTransfer < 0) {
             throw new RuntimeException("Сумма перевода должна быть положительная");
         }
-        if (sourceAccount.getMoneyAmount() < amount) {
-            throw new RuntimeException(String.format("Недостаточно средств на счету %s, на данныйм момент %s\n",
-                    sourceAccountId, sourceAccount.getMoneyAmount()));
+        if (sourceAccountId == targetAccountId) {
+            throw new RuntimeException("Выбранно два аккаунта с одинаковыми ID");
         }
-        sourceAccount.setMoneyAmount(sourceAccount.getMoneyAmount() - amount);
-        if (!sourceAccount.getUserId().equals(targetAccount.getUserId())) {
-            amount = amount - (amount * accountProperties.getTransferCommission());
-        }
-        targetAccount.setMoneyAmount(targetAccount.getMoneyAmount() + amount);
-        return targetAccount;
+        return transactionHelper.executeInTransaction(session -> {
+            Optional<Account> sourceAccountOpt = getById(sourceAccountId);
+            Optional<Account> targetAccountOpt = getById(targetAccountId);
+            if (!sourceAccountOpt.isPresent()) {
+                throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(sourceAccountId));
+            }
+            if (!targetAccountOpt.isPresent()) {
+                throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(targetAccountId));
+            }
+            var sourceAccount = sourceAccountOpt.get();
+            var targetAccount = targetAccountOpt.get();
+
+            accountWithdraw(sourceAccountId, amountTransfer);
+            Double amountTarget = amountTransfer;
+            if (targetAccount.getUser().getId() != sourceAccount.getUser().getId()) {
+                amountTarget = amountTransfer - (amountTransfer * accountProperties.getTransferCommission());
+            }
+            accountDeposit(targetAccountId, amountTarget);
+            return targetAccount;
+        });
     }
 
     public Account accountDeposit(Long accountId, Double amount) throws RuntimeException {
-        if (!accounts.containsKey(accountId)) {
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(accountId));
-        }
         if (amount < 0) {
             throw new RuntimeException("Сумма пополнения должна быть положительная");
         }
-        Account account = accounts.get(accountId);
-        account.setMoneyAmount(account.getMoneyAmount() + amount);
-        return account;
+        return transactionHelper.executeInTransaction(session -> {
+            Optional<Account> accountOptional = getById(accountId);
+            if (!accountOptional.isPresent()) {
+                throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(accountId));
+            }
+            Account account = accountOptional.get();
+            account.setMoneyAmount(account.getMoneyAmount() + amount);
+            session.merge(account);
+//            if(account.getId() == accountId) {
+//                throw new RuntimeException("Проверка отката транзакции");
+//            }
+            return account;
+        });
     }
 
     public Account accountWithdraw(Long accountId, Double amount) throws RuntimeException {
-        if (!accounts.containsKey(accountId)) {
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(accountId));
-        }
         if (amount < 0) {
             throw new RuntimeException("Сумма списания должна быть положительная");
         }
-        Account account = accounts.get(accountId);
-        if (amount > account.getMoneyAmount()) {
-            throw new RuntimeException("Недостаточно средств для списания");
-        }
-        account.setMoneyAmount(account.getMoneyAmount() - amount);
-        return account;
+        return transactionHelper.executeInTransaction(session -> {
+            Optional<Account> accountOptional = getById(accountId);
+            if (!accountOptional.isPresent()) {
+                throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(accountId));
+            }
+            Account account = accountOptional.get();
+            if (amount > account.getMoneyAmount()) {
+                throw new RuntimeException("Недостаточно средств для списания");
+            }
+            account.setMoneyAmount(account.getMoneyAmount() - amount);
+            session.merge(account);
+            return account;
+        });
     }
 }

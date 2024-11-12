@@ -33,7 +33,7 @@ public class AccountCreateProcessor implements OperationProcessor {
             return;
         }
         Account newAccount = accountService.createAccount(Long.parseLong(userId));
-        System.out.printf(Message.CREATE_ACCOUNT.getMessage(), newAccount.getId(), newAccount.getUserId());
+        System.out.printf(Message.CREATE_ACCOUNT.getMessage(), newAccount.getId(), newAccount.getUser().getId());
     }
 
     @Override

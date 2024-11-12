@@ -1,9 +1,10 @@
 package bank.dev.service;
 
-import bank.dev.entity.Account;
 import bank.dev.entity.User;
 import bank.dev.util.Message;
-import org.springframework.context.annotation.Lazy;
+import bank.dev.util.TransactionHelper;
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -12,47 +13,50 @@ import java.util.*;
 public class UserService {
 
     private final AccountService accountService;
+    private final TransactionHelper transactionHelper;
+    private final SessionFactory sessionFactory;
 
-    private final Map<String, User> users = new HashMap<>();
-
-    private final Map<Long, String> logins = new HashMap<>();
-
-    private long userId = 1;
-
-    public UserService(AccountService accountService) {
+    public UserService(AccountService accountService, TransactionHelper transactionHelper, SessionFactory sessionFactory) {
         this.accountService = accountService;
+        this.transactionHelper = transactionHelper;
+        this.sessionFactory = sessionFactory;
     }
 
     public User createUser(String login) {
-        if(users.containsKey(login)) {
+        if (checkLogin(login)) {
             throw new RuntimeException(String.format(Message.USER_LOGIN_EXISTS.getMessage(), login));
         }
-        User user = new User();
-        user.setLogin(login);
-        user.setId(userId++);
-        user.setAccounts(List.of(accountService.createAccount(user.getId(), true)));
-        users.put(login, user);
-        logins.put(user.getId(), login);
-        return user;
+        User userCreate = transactionHelper.executeInTransaction(session -> {
+            User user = new User();
+            user.setLogin(login);
+            session.persist(user);
+            user.setAccounts(new ArrayList<>(Arrays.asList(accountService.createAccount(user))));
+            return user;
+        });
+        return userCreate;
+    }
+
+    private boolean checkLogin(String login) {
+        try (Session session = sessionFactory.openSession()) {
+            Optional<Integer> count = session.createQuery("SELECT 1 from User u where u.login = :login", Integer.class)
+                    .setParameter("login", login)
+                    .uniqueResultOptional();
+            return count.isPresent();
+        }
     }
 
     public List<User> showUsers() {
-        return new ArrayList<>(users.values());
-    }
-
-    public boolean checkLogin(Long userId) {
-        return logins.containsKey(userId);
-    }
-
-    public Optional<User> getUser(Long userId) {
-        return Optional.ofNullable(users.get(logins.get(userId)));
-    }
-
-    public void modifyAccount(Long userId, List<Account> accounts) {
-        if(!logins.containsKey(userId)) {
-            return;
+        try (Session session = sessionFactory.openSession()) {
+            return session.createQuery("select u from User u left join fetch u.accounts a", User.class).list();
         }
-        User user = getUser(userId).get();
-        user.setAccounts(accounts);
+    }
+
+    // TODO: в будущем добавить проверку на наличие сущности в persistant
+    public Optional<User> getById(Long userId) {
+        try (Session session = sessionFactory.openSession()) {
+            return session.createQuery("select u from User u left join fetch Account a on u = a.user where u.id=:userId", User.class)
+                    .setParameter("userId", userId)
+                    .uniqueResultOptional();
+        }
     }
 }
