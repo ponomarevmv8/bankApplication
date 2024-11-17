@@ -5,8 +5,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.springframework.stereotype.Component;
 
-import java.util.function.Consumer;
-import java.util.function.Function;
+import java.util.function.Supplier;
 
 @Component
 public class TransactionHelper {
@@ -17,93 +16,25 @@ public class TransactionHelper {
         this.sessionFactory = sessionFactory;
     }
 
-    public void executeInTransaction(Consumer<Session> action) {
-        Session session = null;
-        try {
-            session = sessionFactory.getCurrentSession();
-        } catch (Exception e) {
-            System.out.println("Not found opened session");
+    public <T> T executeInTransaction(Supplier<T> action) {
+
+        Session session = sessionFactory.getCurrentSession();
+        Transaction transaction = session.getTransaction();
+
+        if (transaction.isActive()) {
+            return action.get();
         }
-
-        if (session != null) {
-            Transaction transaction = null;
-            try {
-                transaction = session.getTransaction();
-                boolean isNewTransaction = !transaction.isActive();
-                if (isNewTransaction) {
-                    transaction.begin();
-                }
-
-                action.accept(session);
-
-                if (isNewTransaction) {
-                    transaction.commit();
-                }
-            } catch (Exception e) {
-                if (transaction != null) {
-                    transaction.rollback();
-                }
-                throw e;
-            }
-        } else {
-            Transaction transaction = null;
-            try (Session sessionNew = sessionFactory.openSession()) {
-                transaction = sessionNew.beginTransaction();
-                action.accept(sessionNew);
-                transaction.commit();
-            } catch (Exception e) {
-                if (transaction != null) {
-                    transaction.rollback();
-                }
-                throw e;
-            }
-        }
-    }
-
-    public <T> T executeInTransaction(Function<Session, T> action) {
-
-        Session session = null;
 
         try {
-            session = sessionFactory.getCurrentSession();
+            session.beginTransaction();
+            var result = action.get();
+            transaction.commit();
+            return result;
         } catch (Exception e) {
-            System.out.println("Not found opened session");
-        }
-
-        if (session != null) {
-            Transaction transaction = null;
-            try {
-                transaction = session.getTransaction();
-                boolean isNewTransaction = !transaction.isActive();
-                if (isNewTransaction) {
-                    transaction.begin();
-                }
-
-                var result = action.apply(session);
-
-                if (isNewTransaction) {
-                    transaction.commit();
-                }
-                return result;
-            } catch (Exception e) {
-                if (transaction != null) {
-                    transaction.rollback();
-                }
-                throw e;
-            }
-        } else {
-            Transaction transaction = null;
-            try (Session sessionNew = sessionFactory.openSession()) {
-                transaction = sessionNew.beginTransaction();
-                var result = action.apply(sessionNew);
-                transaction.commit();
-                return result;
-            } catch (Exception e) {
-                if (transaction != null) {
-                    transaction.rollback();
-                }
-                throw e;
-            }
+            transaction.rollback();
+            throw e;
+        } finally {
+            session.close();
         }
     }
 

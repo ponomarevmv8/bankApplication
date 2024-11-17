@@ -22,7 +22,7 @@ public class HibernateConfiguration {
                 .setProperty("hibernate.connection.username", "postgres")
                 .setProperty("hibernate.connection.password", "root")
                 .setProperty("hibernate.connection.driver_class", "org.postgresql.Driver")
-                .setProperty("hibernate.hbm2ddl.auto", "update")
+                .setProperty("hibernate.hbm2ddl.auto", "create-drop")
                 .setProperty("hibernate.current_session_context_class", "thread");
         return configuration.buildSessionFactory();
     }
