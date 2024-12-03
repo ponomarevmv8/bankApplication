@@ -32,8 +32,8 @@ public class AccountCloseProcessor implements OperationProcessor {
         if (!UtilValidate.isNumberAndPositive(accountId)) {
             return;
         }
-        Account accountClosed = accountService.closeAccount(Long.parseLong(accountId));
-        System.out.printf(Message.CLOSE_ACCOUNT.getMessage(), accountClosed.getId());
+        accountService.closeAccount(Long.parseLong(accountId));
+        System.out.printf(Message.CLOSE_ACCOUNT.getMessage(), accountId);
     }
 
     @Override

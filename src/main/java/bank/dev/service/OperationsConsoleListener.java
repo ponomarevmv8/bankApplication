@@ -56,7 +56,7 @@ public class OperationsConsoleListener {
         try {
             operationProcesses.get(operationType).process();
         } catch (Exception e) {
-            System.out.println(e.getMessage());
+            System.out.println("Error: " + e.getMessage());
         }
     }
 

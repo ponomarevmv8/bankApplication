@@ -2,119 +2,130 @@ package bank.dev.service;
 
 import bank.dev.config.AccountProperties;
 import bank.dev.entity.Account;
+import bank.dev.entity.User;
 import bank.dev.util.Message;
+import bank.dev.util.TransactionHelper;
+import org.hibernate.SessionFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Component
 public class AccountService {
 
-    private final Map<Long, List<Account>> accountsUserId = new HashMap<>();
-    private final Map<Long, Account> accounts = new HashMap<>();
-    private long accountId = 1;
-
     private final UserService userService;
     private final AccountProperties accountProperties;
+    private final TransactionHelper transactionHelper;
+    private final SessionFactory sessionFactory;
 
 
-    public AccountService(@Lazy UserService userService, AccountProperties accountProperties) {
+    public AccountService(@Lazy UserService userService, AccountProperties accountProperties, TransactionHelper transactionHelper, SessionFactory sessionFactory) {
         this.userService = userService;
         this.accountProperties = accountProperties;
+        this.transactionHelper = transactionHelper;
+        this.sessionFactory = sessionFactory;
+    }
+
+    public Account createAccount(User user) {
+        return transactionHelper.executeInTransaction(() -> {
+            var session = sessionFactory.getCurrentSession();
+            Account account = new Account();
+            account.setUser(user);
+            if (user.getAccounts().isEmpty()) {
+                account.setMoneyAmount(accountProperties.getDefaultBalance());
+            }
+            session.persist(account);
+            return account;
+        });
     }
 
     public Account createAccount(Long userId) {
-        return createAccount(userId, false);
+        User user = userService.getById(userId);
+        return createAccount(user);
     }
 
-    public Account createAccount(Long userId, boolean isService) {
-        if (!userService.checkLogin(userId) && !isService) {
-            throw new IllegalStateException(String.format(Message.NOT_FOUND_USER.getMessage(),
-                    userId));
-        }
-        Account account = new Account();
-        account.setUserId(userId);
-        account.setId(accountId++);
-        if (!accountsUserId.containsKey(userId)) {
-            account.setMoneyAmount(accountProperties.getDefaultBalance());
-            accountsUserId.put(userId, new ArrayList<>(List.of(account)));
-        } else {
-            List<Account> accountList = accountsUserId.get(userId);
-            accountList.add(account);
-            userService.modifyAccount(userId, accountList);
-        }
-        accounts.put(account.getId(), account);
-        return account;
+    public void closeAccount(Long accountId) throws RuntimeException {
+
+        transactionHelper.executeInTransaction(() -> {
+            var session = sessionFactory.getCurrentSession();
+            Account account = getById(accountId);
+            List<Account> accountsUser = account.getUser().getAccounts();
+            if (accountsUser.size() < 2) {
+                throw new RuntimeException("Аккаунт невозможно закрыть, так как он единственный");
+            }
+            if (account.getMoneyAmount() != 0L) {
+                Account accountTransfer = accountsUser.get(0).getId().equals(accountId) ?
+                        accountsUser.get(1)
+                        : accountsUser.get(0);
+                accountTransfer.setMoneyAmount(accountTransfer.getMoneyAmount() + account.getMoneyAmount());
+            }
+            session.remove(account);
+            return account;
+        });
     }
 
-    public Account closeAccount(Long accountId) throws RuntimeException {
-        if (!accounts.containsKey(accountId)) {
-            throw new RuntimeException(String.format(Message.NOT_FOUND_ACCOUNT.getMessage(), accountId));
-        }
-        List<Account> accountsUser = accountsUserId.get(accounts.get(accountId).getUserId());
-        if (accountsUser.size() < 2) {
-            throw new RuntimeException("Аккаунт невозможно закрыть, так как он единственный");
-        }
+    public Account getById(Long accountId) {
 
-        Account accountClosed = accounts.get(accountId);
-        Account accountTransfer = accountsUser.get(0).getId().equals(accountId) ? accountsUser.get(1) : accountsUser.get(0);
-        accountTransfer.setMoneyAmount(accountTransfer.getMoneyAmount() + accountClosed.getMoneyAmount());
-        accountsUser.remove(accountClosed);
-        return accountClosed;
+        return transactionHelper.executeInTransaction(() -> {
+            var session = sessionFactory.getCurrentSession();
+            return session.createQuery("""
+                            select a from Account a left join fetch a.user u where a.id = :accountId
+                            """, Account.class)
+                    .setParameter("accountId", accountId)
+                    .uniqueResultOptional().orElseThrow(
+                            () -> new IllegalStateException(String.format(Message.NOT_FOUND_ACCOUNT.getMessage(), accountId))
+                    );
+        });
+
     }
 
     public Account accountTransfer(Long sourceAccountId, Long targetAccountId, Double amount) throws RuntimeException {
-        Account sourceAccount = accounts.get(sourceAccountId);
-        Account targetAccount = accounts.get(targetAccountId);
-        if (sourceAccount == null) {
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(sourceAccountId));
-        }
-        if(targetAccount == null){
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(targetAccountId));
-        }
-        if (amount < 0) {
+        Double amountTransfer = amount;
+        if (amountTransfer < 0) {
             throw new RuntimeException("Сумма перевода должна быть положительная");
         }
-        if (sourceAccount.getMoneyAmount() < amount) {
-            throw new RuntimeException(String.format("Недостаточно средств на счету %s, на данныйм момент %s\n",
-                    sourceAccountId, sourceAccount.getMoneyAmount()));
+        if (sourceAccountId == targetAccountId) {
+            throw new RuntimeException("Выбранно два аккаунта с одинаковыми ID");
         }
-        sourceAccount.setMoneyAmount(sourceAccount.getMoneyAmount() - amount);
-        if (!sourceAccount.getUserId().equals(targetAccount.getUserId())) {
-            amount = amount - (amount * accountProperties.getTransferCommission());
-        }
-        targetAccount.setMoneyAmount(targetAccount.getMoneyAmount() + amount);
-        return targetAccount;
+        return transactionHelper.executeInTransaction(() -> {
+            Account sourceAccount = getById(sourceAccountId);
+            Account targetAccount = getById(targetAccountId);
+            accountWithdraw(sourceAccountId, amountTransfer);
+            Double amountTarget = amountTransfer;
+            if (targetAccount.getUser().getId() != sourceAccount.getUser().getId()) {
+                amountTarget = amountTransfer - (amountTransfer * accountProperties.getTransferCommission());
+            }
+            accountDeposit(targetAccountId, amountTarget);
+            return targetAccount;
+        });
     }
 
     public Account accountDeposit(Long accountId, Double amount) throws RuntimeException {
-        if (!accounts.containsKey(accountId)) {
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(accountId));
-        }
         if (amount < 0) {
             throw new RuntimeException("Сумма пополнения должна быть положительная");
         }
-        Account account = accounts.get(accountId);
-        account.setMoneyAmount(account.getMoneyAmount() + amount);
-        return account;
+        return transactionHelper.executeInTransaction(() -> {
+            Account account = getById(accountId);
+            account.setMoneyAmount(account.getMoneyAmount() + amount);
+//            if(account.getId() == accountId) {
+//                throw new RuntimeException("Проверка отката транзакции");
+//            }
+            return account;
+        });
     }
 
     public Account accountWithdraw(Long accountId, Double amount) throws RuntimeException {
-        if (!accounts.containsKey(accountId)) {
-            throw new RuntimeException(Message.NOT_FOUND_ACCOUNT.getMessage().formatted(accountId));
-        }
         if (amount < 0) {
             throw new RuntimeException("Сумма списания должна быть положительная");
         }
-        Account account = accounts.get(accountId);
-        if (amount > account.getMoneyAmount()) {
-            throw new RuntimeException("Недостаточно средств для списания");
-        }
-        account.setMoneyAmount(account.getMoneyAmount() - amount);
-        return account;
+        return transactionHelper.executeInTransaction(() -> {
+            Account account = getById(accountId);
+            if (amount > account.getMoneyAmount()) {
+                throw new RuntimeException("Недостаточно средств для списания");
+            }
+            account.setMoneyAmount(account.getMoneyAmount() - amount);
+            return account;
+        });
     }
 }
